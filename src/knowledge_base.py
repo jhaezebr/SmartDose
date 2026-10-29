@@ -44,6 +44,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/105/aciclovir-oraal-en-intraveneus",
             "evidence_level": "Level 1A - Hospital Protocol & International Pediatric Formularies"
         },
+        excipient_warnings=[
+            {"excipient": "Sorbitol & Parabens (Zovirax suspensie)", "risk": "GI intolerance and hyperosmolality in young neonates", "min_age_months": 1}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Severe hepatic dysfunction", "instruction": "No primary dose reduction required; monitor for neurotoxicity in advanced hepatic encephalopathy"}
+        ],
         dosing_rules=[
             # Oral - Prophylactic (Children < 40 kg)
             DosingRule(
@@ -160,6 +166,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/92/fluconazol",
             "evidence_level": "Level 1A Guideline Protocol"
         },
+        excipient_warnings=[
+            {"excipient": "Sodium benzoate (Diflucan poeder voor suspensie)", "risk": "Bilirubin displacement from albumin / risk of kernicterus in neonates", "min_age_months": 1}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Significant hepatic impairment (Child-Pugh B/C or Bilirubin > 3x ULN)", "instruction": "Reduce daily maintenance dose by 50% and closely monitor transaminases"}
+        ],
         dosing_rules=[
             # Oral / IV: Children 6 months to 13 years
             DosingRule(
@@ -245,6 +257,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/314/cotrimoxazol-sulfamethoxazol-trimethoprim",
             "evidence_level": "Level 1A Guideline Protocol"
         },
+        excipient_warnings=[
+            {"excipient": "Sorbitol & Propylene glycol (Bactrim suspensie)", "risk": "Hyperosmolality, lactic acidosis, and sulfonamide-induced kernicterus in neonates", "min_age_months": 2}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Severe acute hepatitis / severe hepatic parenchyma necrosis", "instruction": "CONTRAINDICATED"}
+        ],
         dosing_rules=[
             DosingRule(
                 rule_id="smz-tmp-oral-proph",
@@ -294,6 +312,10 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/54/ursodeoxycholzuur",
             "evidence_level": "Level 1A Pediatric Protocol"
         },
+        excipient_warnings=[],
+        hepatic_adjustments=[
+            {"condition": "Complete biliary tract obstruction / Acute cholecystitis", "instruction": "CONTRAINDICATED"}
+        ],
         dosing_rules=[
             DosingRule(
                 rule_id="urso-oral-sct-proph",
@@ -337,6 +359,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/32935/fenoxymethylpenicilline",
             "evidence_level": "Level 1A Protocol"
         },
+        excipient_warnings=[
+            {"excipient": "Potassium salts & Sodium benzoate (Infectocillin siroop)", "risk": "Electrolyte load in neonates < 1 month", "min_age_months": 1}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Combined severe hepatic and renal impairment", "instruction": "Extend dosing intervals; primary excretion is renal but hepatic pathway becomes rate-limiting"}
+        ],
         dosing_rules=[
             # Oral Penicillin: 50,000 IE/kg/day in 3 doses
             DosingRule(
@@ -411,6 +439,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/7/amoxicilline",
             "evidence_level": "Level 1A Guideline Protocol"
         },
+        excipient_warnings=[
+            {"excipient": "Sodium benzoate (Clamoxyl poeder voor suspensie)", "risk": "Bilirubin displacement in neonates < 1 month", "min_age_months": 1}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Hepatic dysfunction / History of amoxicillin-associated jaundice", "instruction": "Monitor hepatic enzymes carefully"}
+        ],
         dosing_rules=[
             # Standard Prophylaxis Children < 6y: 10 mg/kg 2x/day
             DosingRule(
@@ -486,6 +520,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/3113/posaconazol",
             "evidence_level": "Level 1B Expert Consensus"
         },
+        excipient_warnings=[
+            {"excipient": "Sodium benzoate & Polysorbate 80 (Noxafil suspensie)", "risk": "Not recommended in infants < 3 months; risk of displacement of bilirubin and accumulation", "min_age_months": 3}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Child-Pugh Class B or C (Moderate to Severe Hepatic Impairment)", "instruction": "Posaconazole exposure is increased; monitor TDM plasma trough concentrations and liver function enzymes frequently"}
+        ],
         dosing_rules=[
             DosingRule(
                 rule_id="posaconazole-tablet-proph",
@@ -525,6 +565,12 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             "url": "https://www.kinderformularium.nl/geneesmiddel/56/omeprazol",
             "evidence_level": "Level 1A Protocol"
         },
+        excipient_warnings=[
+            {"excipient": "Sucrose / Lactose pellets (Omeprazol capsules)", "risk": "Check for rare hereditary fructose or galactose intolerance in neonates", "min_age_months": 1}
+        ],
+        hepatic_adjustments=[
+            {"condition": "Severe hepatic impairment (Child-Pugh Class C)", "instruction": "Elimination half-life prolonged (approx 3h); maximum daily dose of 10-20 mg/day is recommended"}
+        ],
         dosing_rules=[
             DosingRule(
                 rule_id="omeprazole-oral-susp",

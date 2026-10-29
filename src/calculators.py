@@ -137,6 +137,24 @@ def evaluate_dosing_rule(
         liquid_vol_ml = round(single_dose / rule.commercial_concentration_mg_ml, 2)
         syringe_rec = recommend_oral_syringe(liquid_vol_ml)
 
+    # 5. Excipient Safety Screening against Patient Age
+    excipient_alerts = []
+    for ew in getattr(drug, "excipient_warnings", []):
+        min_age = ew.get("min_age_months", 1)
+        if patient.age_months < min_age:
+            excipient_alerts.append({
+                "excipient": ew.get("excipient", "Hazardous Additive"),
+                "risk": ew.get("risk", "Toxicity risk"),
+                "min_age_months": min_age,
+                "action": "Consider TMF magistral compounding without preservatives or switch to excipient-free formulation."
+            })
+
+    # 6. Hepatic Adjustment Note
+    hepatic_note = None
+    if getattr(drug, "hepatic_adjustments", []):
+        notes = [f"{ha.get('condition')}: {ha.get('instruction')}" for ha in drug.hepatic_adjustments]
+        hepatic_note = " | ".join(notes)
+
     if cap_notes:
         math_steps += f" [{', '.join(cap_notes)}]"
 
@@ -153,10 +171,15 @@ def evaluate_dosing_rule(
         liquid_volume_ml=liquid_vol_ml,
         recommended_syringe=syringe_rec,
         renal_status_note=renal_note,
+        hepatic_status_note=hepatic_note,
+        excipient_alerts=excipient_alerts,
         dose_cap_applied=dose_cap_applied,
         source_citation=drug.source_citation,
         commercial_brands=drug.brands,
         magistral_formula=drug.magistral_formula,
         administration_instructions=drug.administration_instructions,
         cautions=drug.cautions,
+        verification_status=getattr(drug, "verification_status", "CLINICALLY_VERIFIED"),
+        verified_by=getattr(drug, "verified_by", None),
+        verified_at=getattr(drug, "verified_at", None),
     )

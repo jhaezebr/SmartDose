@@ -159,5 +159,197 @@ class TestOfficialReferenceLinks(unittest.TestCase):
             )
 
 
+class TestKnowledgeDBAndLifecycle(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        self.temp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+        from src.knowledge_db import init_db
+        init_db(self.temp_db)
+
+    def tearDown(self):
+        import os
+        if os.path.exists(self.temp_db):
+            os.remove(self.temp_db)
+
+    def test_db_seeding_and_retrieval(self):
+        from src.knowledge_db import get_drug_from_db, list_drugs_from_db, get_all_substance_names_from_db
+        drugs = list_drugs_from_db(db_path=self.temp_db)
+        self.assertGreaterEqual(len(drugs), 8)
+
+        names = get_all_substance_names_from_db(db_path=self.temp_db)
+        self.assertIn("Aciclovir", names)
+        self.assertIn("Sulfamethoxazole-Trimethoprim", names)
+
+        drug = get_drug_from_db("Aciclovir", db_path=self.temp_db)
+        self.assertIsNotNone(drug)
+        self.assertEqual(drug.substance, "Aciclovir")
+        self.assertEqual(drug.verification_status, "CLINICALLY_VERIFIED")
+
+    def test_approval_lifecycle(self):
+        from src.knowledge_db import save_drug_to_db, get_drug_from_db, approve_drug_in_db
+        from src.scraper import crawl_and_ingest_drug
+
+        # Ingest an unverified drug
+        ingested = crawl_and_ingest_drug("paracetamol", db_path=self.temp_db)
+        self.assertIsNotNone(ingested)
+        self.assertEqual(ingested.verification_status, "AI_EXTRACTED")
+
+        # Doctor approves drug
+        success = approve_drug_in_db("Paracetamol", "Dr. Jean Dupont", db_path=self.temp_db)
+        self.assertTrue(success)
+
+        # Check updated status in DB
+        approved_drug = get_drug_from_db("Paracetamol", db_path=self.temp_db)
+        self.assertEqual(approved_drug.verification_status, "CLINICALLY_VERIFIED")
+        self.assertEqual(approved_drug.verified_by, "Dr. Jean Dupont")
+        self.assertIsNotNone(approved_drug.verified_at)
+
+    def test_synonym_and_brand_search(self):
+        from src.knowledge_db import get_drug_from_db, list_drugs_from_db, format_drug_search_label
+
+        # Synonym lookup: Cotrimoxazol -> Sulfamethoxazole-Trimethoprim
+        cotrim = get_drug_from_db("Cotrimoxazol", db_path=self.temp_db)
+        self.assertIsNotNone(cotrim)
+        self.assertEqual(cotrim.substance, "Sulfamethoxazole-Trimethoprim")
+
+        # Brand lookup: Bactrim -> Sulfamethoxazole-Trimethoprim, Zovirax -> Aciclovir
+        bactrim = get_drug_from_db("Bactrim", db_path=self.temp_db)
+        self.assertIsNotNone(bactrim)
+        self.assertEqual(bactrim.substance, "Sulfamethoxazole-Trimethoprim")
+
+        zovirax = get_drug_from_db("Zovirax", db_path=self.temp_db)
+        self.assertIsNotNone(zovirax)
+        self.assertEqual(zovirax.substance, "Aciclovir")
+
+        # List search by synonym and brand
+        matches_syn = list_drugs_from_db(query="cotrimoxazol", db_path=self.temp_db)
+        self.assertEqual(len(matches_syn), 1)
+        self.assertEqual(matches_syn[0].substance, "Sulfamethoxazole-Trimethoprim")
+
+        matches_brand = list_drugs_from_db(query="Clamoxyl", db_path=self.temp_db)
+        self.assertEqual(len(matches_brand), 1)
+        self.assertEqual(matches_brand[0].substance, "Amoxicilline")
+
+        # Formatted label contains substance, synonym, and brand
+        label = format_drug_search_label(cotrim)
+        self.assertIn("Sulfamethoxazole-Trimethoprim", label)
+        self.assertIn("Cotrimoxazol", label)
+        self.assertIn("Bactrim", label)
+
+    def test_route_and_intent_filtering(self):
+        from src.knowledge_db import list_drugs_from_db
+
+        im_drugs = list_drugs_from_db(route_filter=["intramuscular"], db_path=self.temp_db)
+        self.assertTrue(any(d.substance == "Penicilline" for d in im_drugs))
+        self.assertFalse(any(d.substance == "Ursodeoxycholzuur" for d in im_drugs))
+
+        proph_drugs = list_drugs_from_db(intent_filter="prophylactic", db_path=self.temp_db)
+        self.assertTrue(any(d.substance == "Ursodeoxycholzuur" for d in proph_drugs))
+
+    def test_kinderformularium_html_parser(self):
+        from src.scraper import parse_kinderformularium_html
+
+        sample_kf_html = """
+        <html>
+        <body>
+            <h3>Azitromycine</h3>
+            <h3>Azitromycine</h3>
+            <h3>MACROLIDEN</h3>
+            <h4>Beschikbare toedieningsvormen/sterktes</h4>
+            <p>Poeder voor orale suspensie 40 mg/ml, Tablet 250 mg, 500 mg</p>
+            <h4>Ongewenste hulpstoffen</h4>
+            <p>Bevat propyleenglycol en natriumbenzoaat in sommige dranken.</p>
+            <h4>Doseringen</h4>
+            <table class="large-12 medium-12 small-12 dosage">
+              <thead>
+                <tr itemscope itemtype="http://schema.org/MedicalIndication">
+                  <th><span itemprop="name">Luchtweginfectie</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><ul>
+                  <li><strong itemprop="administrationRoute">Oraal</strong>
+                    <ul>
+                      <li itemscope itemtype="http://schema.org/DoseSchedule">
+                        <strong><div itemprop="targetPopulation">1 maand tot 18 jaar</div></strong>
+                        <ul>
+                          <li>
+                            <span itemprop="doseValue">10</span>
+                            <span itemprop="doseUnit">mg/kg/dag,</span>
+                            <span itemprop="frequency">in 1 dosis. Maximaal 500 mg per dag.</span>
+                          </li>
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul></td></tr>
+              </tbody>
+            </table>
+            <h4>Contraindicaties bij kinderen</h4>
+            <p>Ernstige leverfunctiestoornis.</p>
+        </body>
+        </html>
+        """
+        parsed = parse_kinderformularium_html(
+            sample_kf_html,
+            "https://www.kinderformularium.nl/geneesmiddel/21/azitromycine",
+            index_entry={"id": 21, "generic_name": "Azitromycine", "branded_name": "Zithromax"},
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.substance, "Azitromycine")
+        self.assertTrue(any("Zithromax" in b["name"] for b in parsed.brands))
+        self.assertEqual(len(parsed.dosing_rules), 1)
+        rule = parsed.dosing_rules[0]
+        self.assertEqual(rule.route, "oral")
+        self.assertEqual(rule.rate, 10.0)
+        self.assertEqual(rule.doses_per_day, 1)
+        self.assertEqual(rule.max_dose_daily, 500.0)
+        self.assertEqual(rule.commercial_concentration_mg_ml, 40.0)
+        self.assertTrue(len(parsed.excipient_warnings) >= 1)
+
+
+class TestPediatricExcipientAndHepaticSafety(unittest.TestCase):
+
+    def test_neonatal_excipient_screening(self):
+        from src.models import Patient
+        from src.knowledge_base import get_clinical_knowledge_base
+
+        kb = get_clinical_knowledge_base()
+        cotrimoxazol = kb["sulfamethoxazol-trimethoprim"] if "sulfamethoxazol-trimethoprim" in kb else kb["sulfamethoxazole-trimethoprim"]
+        rule = cotrimoxazol.dosing_rules[0]
+
+        # 1-month-old neonate (contraindicated for Bactrim excipients: sorbitol / propylene glycol)
+        neonate = Patient(
+            id="pat-neonate-001",
+            name="Baby Lucas",
+            age_years=0,
+            age_months=1,
+            weight_kg=3.8,
+            height_cm=52.0,
+            gender="male",
+            serum_creatinine_mg_dl=0.3
+        )
+
+        res_neonate = evaluate_dosing_rule(neonate, cotrimoxazol, rule, bsa=0.23, egfr=71.5)
+        self.assertTrue(len(res_neonate.excipient_alerts) > 0)
+        self.assertIn("TMF magistral", res_neonate.excipient_alerts[0]["action"])
+
+        # 5-year-old child (60 months) -> above excipient minimum age threshold (2 months)
+        older_child = Patient(
+            id="pat-child-002",
+            name="Noah",
+            age_years=5,
+            age_months=60,
+            weight_kg=19.0,
+            height_cm=110.0,
+            gender="male",
+            serum_creatinine_mg_dl=0.45
+        )
+        res_older = evaluate_dosing_rule(older_child, cotrimoxazol, rule, bsa=0.76, egfr=100.9)
+        self.assertEqual(len(res_older.excipient_alerts), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+

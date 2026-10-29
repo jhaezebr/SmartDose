@@ -4,6 +4,7 @@ errors, screen drug interactions, and push prescriptions to Belgian Recip-e FHIR
 """
 
 import streamlit as st
+from typing import Optional, List, Dict
 from src.calculators import (
     calculate_bsa_mosteller,
     calculate_bmi,
@@ -16,8 +17,19 @@ from src.fhir_client import (
     get_patient_profile,
     push_prescription_to_recipe,
 )
-from src.knowledge_base import get_clinical_knowledge_base, search_drugs
+from src.knowledge_db import (
+    init_db,
+    get_drug_from_db,
+    list_drugs_from_db,
+    get_all_substance_names_from_db,
+    approve_drug_in_db,
+    format_drug_search_label,
+)
+from src.scraper import crawl_and_ingest_drug, fetch_kinderformularium_index
 from src.models import Patient, CalculationResult, DrugInfo, DosingRule
+
+# Initialize SQLite database on app load
+init_db()
 
 # Page configuration
 st.set_page_config(
@@ -152,20 +164,22 @@ st.divider()
 # -----------------------------------------------------------------------------
 st.markdown("### 2. Medication Search & Route Preselection")
 
-search_col1, search_col2, search_col3 = st.columns([1.5, 1.5, 2])
+search_col1, search_col2, search_col3 = st.columns([1.3, 1.2, 2.5])
 
 with search_col1:
     route_options = ["oral", "intravenous", "intramuscular"]
+    pref_hint = f" (Patient preferred: {patient.preferred_route.upper()})" if patient.preferred_route else ""
     selected_routes = st.multiselect(
-        "Type of Administration (Leave empty for ALL routes):",
+        f"Type of Administration{pref_hint}:",
         options=route_options,
-        default=[patient.preferred_route] if (patient.preferred_route and patient.preferred_route in route_options) else [],
+        default=[],
+        placeholder="All routes (PO, IV, IM)",
         format_func=lambda r: {
             "oral": "Oral (PO) - Syrups / Tablets",
             "intravenous": "Intravenous (IV) - Infusions / Vials",
             "intramuscular": "Intramuscular (IM) - Depot Injections",
         }.get(r, r),
-        help="Select doctor preference. If none selected, all administration forms will be calculated.",
+        help="Filter formulary and dosing calculations by administration route. Leave empty to show all routes.",
     )
 
 with search_col2:
@@ -173,23 +187,102 @@ with search_col2:
         "Clinical Intent:",
         options=["all", "prophylactic", "therapeutic"],
         format_func=lambda i: {
-            "all": "All Indications",
+            "all": "All Indications (Prophylactic & Therapeutic)",
             "prophylactic": "Prophylactic (Preventive)",
             "therapeutic": "Therapeutic (Curative)",
         }.get(i, i),
-        index=1,
+        index=0,
     )
 
-kb = get_clinical_knowledge_base()
-drug_names = [drug.substance for drug in kb.values()]
+# Dynamically filter drugs from SQLite database by route and clinical intent
+filtered_drugs = list_drugs_from_db(
+    route_filter=selected_routes if selected_routes else None,
+    intent_filter=intent_choice,
+)
+if not filtered_drugs:
+    st.warning("No local medications match the selected route/intent filters. Showing all formulary substances.")
+    filtered_drugs = list_drugs_from_db()
+
+db_substances = [d.substance for d in filtered_drugs]
+drug_label_map = {d.substance: format_drug_search_label(d) for d in filtered_drugs}
+
+# Maintain selected substance across reruns (e.g. after ingesting a new drug)
+default_sub_idx = 0
+if "selected_substance" in st.session_state and st.session_state["selected_substance"] in db_substances:
+    default_sub_idx = db_substances.index(st.session_state["selected_substance"])
 
 with search_col3:
     selected_substance_name = st.selectbox(
-        "Prescribe Substance / Medication (Autocomplete Recommended):",
-        options=drug_names,
-        index=0,
-        help="Type or select generic substance. Commercial brand packaging is mapped automatically below.",
+        "Search by Generic Substance, Synonym, or Commercial Brand:",
+        options=db_substances,
+        index=default_sub_idx if db_substances else None,
+        format_func=lambda s: drug_label_map.get(s, s),
+        help="Type any substance (e.g., Aciclovir), synonym (e.g., Cotrimoxazol, UDCA), or brand (e.g., Bactrim, Zovirax, Dafalgan, Nurofen, Clamoxyl, Diflucan).",
     )
+    if selected_substance_name:
+        st.session_state["selected_substance"] = selected_substance_name
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_cached_kf_catalog() -> List[Dict]:
+    return fetch_kinderformularium_index()
+
+
+# Dynamic on-demand crawler / ingestion section with full 938-drug Kinderformularium catalog
+with st.expander("🌐 Search & Ingest New Substance from Kinderformularium (938 Pediatric Monographs)"):
+    st.caption(
+        "Search all 938 official Kinderformularium pediatric monographs by generic substance or brand name, or paste a direct URL:"
+    )
+    kf_catalog = get_cached_kf_catalog()
+    kf_col1, kf_col2 = st.columns([3, 1])
+
+    with kf_col1:
+        if kf_catalog:
+            kf_options = [
+                f"{item.get('generic_name', '')}"
+                + (f" — Brands: {item.get('branded_name')}" if item.get("branded_name") else "")
+                for item in kf_catalog
+            ]
+            selected_kf_idx = st.selectbox(
+                "1️⃣ Select from Kinderformularium Catalog (Type Generic or Brand Name):",
+                options=range(len(kf_catalog)),
+                format_func=lambda i: kf_options[i],
+                index=0,
+                key="kf_catalog_selectbox",
+            )
+        else:
+            selected_kf_idx = None
+        new_drug_input = st.text_input(
+            "2️⃣ Or type a custom drug name / Kinderformularium URL:",
+            placeholder="e.g. Azitromycine, Zithromax, Augmentin, Ventolin, or https://www.kinderformularium.nl/geneesmiddel/...",
+        )
+
+    with kf_col2:
+        st.write("")
+        if kf_catalog and st.button("📥 Ingest Selected Catalog Drug", use_container_width=True):
+            chosen_entry = kf_catalog[selected_kf_idx]
+            target_name = chosen_entry.get("generic_name", "")
+            with st.spinner(f"Crawling & parsing {target_name} from Kinderformularium..."):
+                ingested = crawl_and_ingest_drug(target_name)
+                if ingested:
+                    st.session_state["selected_substance"] = ingested.substance
+                    st.success(f"✓ Ingested **{ingested.substance}** as `AI_EXTRACTED`!")
+                    st.rerun()
+                else:
+                    st.error(f"Could not fetch or parse '{target_name}'.")
+
+        if st.button("📥 Ingest Custom Name / URL", use_container_width=True):
+            if new_drug_input.strip():
+                with st.spinner(f"Crawling & parsing '{new_drug_input.strip()}'..."):
+                    ingested = crawl_and_ingest_drug(new_drug_input.strip())
+                    if ingested:
+                        st.session_state["selected_substance"] = ingested.substance
+                        st.success(f"✓ Ingested **{ingested.substance}** as `AI_EXTRACTED`!")
+                        st.rerun()
+                    else:
+                        st.error(f"Could not find or parse '{new_drug_input.strip()}' on Kinderformularium.")
+            else:
+                st.warning("Enter a drug name or URL in box 2️⃣ above, or use button 1️⃣.")
 
 st.divider()
 
@@ -197,17 +290,47 @@ st.divider()
 # 3. RESULTS & DECISION SUPPORT DASHBOARD
 # -----------------------------------------------------------------------------
 if selected_substance_name:
-    drug_key = selected_substance_name.lower().replace(" ", "-")
-    drug = kb.get(drug_key)
-
-    if not drug:
-        # Fallback search
-        matches = search_drugs(selected_substance_name)
-        drug = matches[0] if matches else None
+    drug: Optional[DrugInfo] = get_drug_from_db(selected_substance_name)
 
     if drug:
-        # 3.1 DDI & SAFETY SCREENING BANNER
+        # 3.0 TRUST & TRANSPARENCY VERIFICATION BANNER
         st.markdown(f"### 3. Safety Screening: {drug.substance}")
+
+        if drug.verification_status == "CLINICALLY_VERIFIED":
+            st.markdown(
+                f"""
+                <div style="background-color: #F0FDF4; border: 1px solid #86EFAC; border-left: 5px solid #22C55E; padding: 12px 16px; border-radius: 6px; margin-bottom: 15px;">
+                    <b style="color: #166534; font-size: 1.05rem;">🟢 Clinically Verified Protocol</b><br>
+                    <span style="color: #15803D; font-size: 0.9rem;">
+                        Verified by: <b>{drug.verified_by or 'Hospital Clinical Pharmacist'}</b> |
+                        Verified at: <i>{drug.verified_at or 'Hospital Protocol'}</i> |
+                        Source: <i>{drug.source_citation.get('title', 'Clinical Formulary')}</i>
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            col_v1, col_v2 = st.columns([3, 1])
+            with col_v1:
+                st.markdown(
+                    f"""
+                    <div style="background-color: #FFFBEB; border: 1px solid #FCD34D; border-left: 5px solid #F59E0B; padding: 12px 16px; border-radius: 6px; margin-bottom: 15px;">
+                        <b style="color: #92400E; font-size: 1.05rem;">🟠 Ingested Monograph — Pending Clinical Validation</b><br>
+                        <span style="color: #B45309; font-size: 0.9rem;">
+                            Extracted automatically by Kinderformularium crawler. Dosing and limits must be verified by prescriber prior to dispensing.
+                        </span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with col_v2:
+                if st.button("✅ Approve for Clinic", key=f"btn_approve_{drug.substance}", use_container_width=True):
+                    approve_drug_in_db(drug.substance, "Dr. Jean Dupont (Attending Pediatrician)")
+                    st.success("Protocol clinically approved!")
+                    st.rerun()
+
+        # 3.1 DDI & SAFETY SCREENING
         screen_result = screen_drug_safety(patient, drug)
 
         if screen_result.status == "CONTRAINDICATED":
@@ -303,6 +426,18 @@ if selected_substance_name:
                     unsafe_allow_html=True,
                 )
 
+                # Excipient toxicity warning (Neonatal / Infant safety)
+                if calc.excipient_alerts:
+                    for exc in calc.excipient_alerts:
+                        st.error(
+                            f"🚫 **Toxic Excipient Alert ({exc['excipient']}):** {exc['risk']}  \n"
+                            f"👉 *Action:* {exc['action']}"
+                        )
+
+                # Hepatic guidance notice
+                if calc.hepatic_status_note:
+                    st.info(f"🩺 **Hepatic Guidance:** {calc.hepatic_status_note}")
+
                 # Renal adjustment notice
                 if calc.renal_status_note:
                     st.warning(f"⚠️ {calc.renal_status_note}")
@@ -368,6 +503,17 @@ if selected_substance_name:
                 st.markdown("##### ⚠️ Special Cautions")
                 for c in drug.cautions:
                     st.markdown(f"- {c}")
+
+            if drug.hepatic_adjustments:
+                st.markdown("##### 🩺 Hepatic Impairment Adjustments")
+                for h in drug.hepatic_adjustments:
+                    st.markdown(f"- **{h.get('condition')}:** {h.get('instruction')}")
+
+            if drug.excipient_warnings:
+                st.markdown("##### 🧪 Pediatric Excipient Safety Registry")
+                for ex in drug.excipient_warnings:
+                    min_age = ex.get('min_age_months', 0)
+                    st.markdown(f"- **{ex.get('excipient')}:** {ex.get('risk')} *(Contraindicated in age < {min_age} months)*")
 
         # 3.4 EXPANDABLE SOURCE CITATION
         with st.expander("📚 Clinical Source Citation & Guideline Traceability"):
