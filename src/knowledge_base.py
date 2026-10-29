@@ -41,7 +41,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 (PHO SCT) / Kinderformularium.nl / PedMed.org",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25414/aciclovir",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/105/aciclovir-oraal-en-intraveneus",
             "evidence_level": "Level 1A - Hospital Protocol & International Pediatric Formularies"
         },
         dosing_rules=[
@@ -157,7 +157,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 PHO SCT / Kinderformularium.nl",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25470/fluconazol",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/92/fluconazol",
             "evidence_level": "Level 1A Guideline Protocol"
         },
         dosing_rules=[
@@ -242,7 +242,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 PHO SCT (Pneumocystis Prophylaxis)",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25442/cotrimoxazol",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/314/cotrimoxazol-sulfamethoxazol-trimethoprim",
             "evidence_level": "Level 1A Guideline Protocol"
         },
         dosing_rules=[
@@ -266,6 +266,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
             )
         ]
     )
+    db["cotrimoxazol"] = db["sulfamethoxazole-trimethoprim"]
 
     # 4. URSODEOXYCHOLZUUR (URSOFALK / URSOCHOL)
     db["ursodeoxycholzuur"] = DrugInfo(
@@ -290,7 +291,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 PHO SCT (Sectie 6.2.6)",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25680/ursodeoxycholzuur",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/54/ursodeoxycholzuur",
             "evidence_level": "Level 1A Pediatric Protocol"
         },
         dosing_rules=[
@@ -333,7 +334,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 PHO SCT (Sectie 6.3 Penicilline)",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25425/fenoxymethylpenicilline",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/32935/fenoxymethylpenicilline",
             "evidence_level": "Level 1A Protocol"
         },
         dosing_rules=[
@@ -407,7 +408,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 / Kinderformularium.nl",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25418/amoxicilline",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/7/amoxicilline",
             "evidence_level": "Level 1A Guideline Protocol"
         },
         dosing_rules=[
@@ -482,7 +483,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         ],
         source_citation={
             "title": "Case Study Slide 8 / Pediatric Oncology Convention / Kinderformularium.nl",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25695/posaconazol",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/3113/posaconazol",
             "evidence_level": "Level 1B Expert Consensus"
         },
         dosing_rules=[
@@ -521,7 +522,7 @@ def get_clinical_knowledge_base() -> Dict[str, DrugInfo]:
         cautions=["Prolonged use may decrease absorption of iron and vitamin B12."],
         source_citation={
             "title": "UZ Gent Richtlijn 906 v10 PHO SCT (Sectie 6.2.3)",
-            "url": "https://www.kinderformularium.nl/geneesmiddel/25401/omeprazol",
+            "url": "https://www.kinderformularium.nl/geneesmiddel/56/omeprazol",
             "evidence_level": "Level 1A Protocol"
         },
         dosing_rules=[
@@ -578,8 +579,11 @@ def search_drugs(query: str, route_filter: Optional[List[str]] = None, intent_fi
     kb = get_clinical_knowledge_base()
     q = query.strip().lower() if query else ""
     matches = []
+    seen = set()
 
     for key, drug in kb.items():
+        if drug.substance in seen:
+            continue
         # Match substance name or brand names
         name_match = (q in drug.substance.lower()) or (q in drug.therapeutic_category.lower())
         if not name_match:
@@ -603,6 +607,7 @@ def search_drugs(query: str, route_filter: Optional[List[str]] = None, intent_fi
             if not drug_routes.intersection(req_routes):
                 continue
 
+        seen.add(drug.substance)
         matches.append(drug)
 
     return matches

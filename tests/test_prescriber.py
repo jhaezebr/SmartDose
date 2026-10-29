@@ -134,5 +134,30 @@ class TestRecipeFHIRPrescription(unittest.TestCase):
         self.assertIsNotNone(result["fhir_id"])
 
 
+class TestOfficialReferenceLinks(unittest.TestCase):
+
+    def test_canonical_kinderformularium_urls(self):
+        kb = get_clinical_knowledge_base()
+        expected_urls = {
+            "cotrimoxazol": "https://www.kinderformularium.nl/geneesmiddel/314/cotrimoxazol-sulfamethoxazol-trimethoprim",
+            "aciclovir": "https://www.kinderformularium.nl/geneesmiddel/105/aciclovir-oraal-en-intraveneus",
+            "fluconazole": "https://www.kinderformularium.nl/geneesmiddel/92/fluconazol",
+            "ursodeoxycholzuur": "https://www.kinderformularium.nl/geneesmiddel/54/ursodeoxycholzuur",
+            "penicilline": "https://www.kinderformularium.nl/geneesmiddel/32935/fenoxymethylpenicilline",
+            "amoxicilline": "https://www.kinderformularium.nl/geneesmiddel/7/amoxicilline",
+            "posaconazole": "https://www.kinderformularium.nl/geneesmiddel/3113/posaconazol",
+            "omeprazole": "https://www.kinderformularium.nl/geneesmiddel/56/omeprazol",
+        }
+        for drug_key, expected_url in expected_urls.items():
+            self.assertIn(drug_key, kb, f"Drug key {drug_key} missing in KB")
+            citation = kb[drug_key].source_citation
+            self.assertIsNotNone(citation)
+            self.assertEqual(
+                citation.get("url"),
+                expected_url,
+                f"URL mismatch for {drug_key}: got {citation.get('url')}, expected {expected_url}"
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

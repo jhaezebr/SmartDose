@@ -123,7 +123,7 @@ The system is designed around a fundamental safety principle: **AI extracts guid
     ],
     "source_citation": {
       "title": "UZ Gent PHO SCT Richtlijn 906 v10 / Kinderformularium",
-      "url": "https://www.kinderformularium.nl/geneesmiddel/25414/aciclovir"
+      "url": "https://www.kinderformularium.nl/geneesmiddel/105/aciclovir-oraal-en-intraveneus"
     }
   }
   ```
